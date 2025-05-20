@@ -67,12 +67,12 @@ class MySQLAssistantWorkflow:
             print("-"*50)
             print(db_analysis_result.get("response"))
             
-            print("\n Key Diagnostics:")
-            print("-"*50)
-            for key, value in db_analysis_result.get("diagnostics", {}).items():
-                if isinstance(value, list) and len(value) > 0:
-                    print(f"\n{key}:")
-                    print(f"Sample: {value[0]}")
+            # print("\n Key Diagnostics:")
+            # print("-"*50)
+            # for key, value in db_analysis_result.get("diagnostics", {}).items():
+            #     if isinstance(value, list) and len(value) > 0:
+            #         print(f"\n{key}:")
+            #         print(f"Sample: {value[0]}")
         else:
             print("\n Analysis Failed:")
             print(db_analysis_result.get("response"))
