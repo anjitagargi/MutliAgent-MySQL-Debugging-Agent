@@ -15,16 +15,8 @@ from prompt import SYSTEM_INSTRUCTIONS
 
 
 class MySQLSolutionAgent:
-    """
-    Agent that combines documentation search and database analysis to provide solutions
-    """
     def __init__(self, model="mistral"):
-        """
-        Initialize the MySQL Solution Agent.
         
-        Args:
-            model: LLM model name to use with Ollama
-        """
         self.llm = Ollama(model=model)
         self._setup_prompts()
         self.system_instructions = SYSTEM_INSTRUCTIONS
@@ -44,17 +36,47 @@ class MySQLSolutionAgent:
         
         Additional context: {context}
 
+        Incase of a information is asked, give solution of that information directly only. Give concise answer.
+                                                                                                                                                                               
+        Important:
+        - Extract and use EXACT values from the database analysis results
+        - For max_connections changes, use the specific value recommended in db_analysis_result
+        - Always reference actual values found in the analysis
+        
+        Follow these guidelines for your response:
+        1. For configuration changes (like max_connections):
+        - Extract the exact suggested value from db_analysis_result
+        - Show current value and recommended value in the overview
+        - Provide commands with the specific extracted value
+        
+        2. For general solutions:
+        - List concrete steps with actual values from analysis
+        - Keep steps concise and actionable
+        - Include verification steps with expected values
+
+        Format your response as:
+        SOLUTION OVERVIEW:
+        [Brief summary with actual current and target values]
+
+        STEPS TO IMPLEMENT:
+        1. [Step 1 with exact values]
+        2. [Step 2 with exact values]
+        ...
+
+    VERIFICATION:
+    - [Specific checks with expected values]
+
+    ADDITIONAL RECOMMENDATIONS:
+    - [If applicable, with specific metrics]
         Please provide a comprehensive solution that addresses the user's query,
         taking into account both the documentation and database analysis results.
         Include specific recommendations and steps to implement the solution.
-        Incase of a information is asked, give solution of that information.
                                                                 
         Solution:
         """)
 
     def generate_solution(self, query: str, doc_search_result: Dict[str, Any], 
                         db_analysis_result: Dict[str, Any]) -> str:
-        """Generate a solution based on the query and analysis results"""
         
         # Create a runnable chain
         chain = self.solution_prompt | self.llm
@@ -71,17 +93,7 @@ class MySQLSolutionAgent:
     
     def process_query(self, query: str, doc_search_result: Dict[str, Any], 
                      db_analysis_result: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        Process a query by generating a comprehensive solution.
-        
-        Args:
-            query: User's original query
-            doc_search_result: Results from the DocSearch agent
-            db_analysis_result: Results from the DBAnalysis agent
-            
-        Returns:
-            Dictionary with solution and metadata
-        """
+
         try:
             solution = self.generate_solution(query, doc_search_result, db_analysis_result)
             

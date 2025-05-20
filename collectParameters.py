@@ -3,16 +3,6 @@ from pymysql.connections import Connection
 import pymysql
 
 def execute_query(connection: Connection, query: str) -> Tuple[bool, List[Dict], str]:
-    """
-    Execute a MySQL query and return results
-    
-    Args:
-        connection: MySQL connection object
-        query: SQL query string
-        
-    Returns:
-        Tuple of (success, results, error_message)
-    """
     try:
         with connection.cursor() as cursor:
             cursor.execute(query)
@@ -23,15 +13,7 @@ def execute_query(connection: Connection, query: str) -> Tuple[bool, List[Dict],
         return False, [], error_message
 
 def collect_system_parameters(connection: Connection) -> Dict[str, Any]:
-    """
-    Collect important MySQL system parameters and configuration settings
     
-    Args:
-        connection: MySQL database connection object
-        
-    Returns:
-        Dict containing system parameters and their values
-    """
     system_params = {}
     param_queries = {
         "buffer_pools": """

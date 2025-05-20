@@ -16,16 +16,8 @@ from prompt import SYSTEM_INSTRUCTIONS
 
 
 class MySQLDBAnalysisAgent:
-    """
-    Agent that connects to MySQL database and performs diagnostic queries
-    """
     def __init__(self, model="mistral"):
-        """
-        Initialize the MySQL DB Analysis Agent.
-        
-        Args:
-            model: LLM model name to use with Ollama
-        """
+    
         self.llm = Ollama(model=model)
         self._setup_prompts()
 
@@ -241,12 +233,11 @@ class MySQLDBAnalysisAgent:
         return response.content if hasattr(response, 'content') else str(response)
     
     def process_query(self, query: str, doc_search_result: Dict[str, Any] = None, 
-                 connection_params: Dict[str, Any] = None) -> Dict[str, Any]:
+                     connection_params: Dict[str, Any] = None) -> Dict[str, Any]:
         """
-        Process a database query and return analysis results
+        Process a database query and return structured analysis results
         """
         try:
-            # Connect to database
             connection = self.connect_to_database(**connection_params)
             if not connection:
                 return {
@@ -255,42 +246,90 @@ class MySQLDBAnalysisAgent:
                     "diagnostics": {}
                 }
 
-            # For information queries, directly query the database
-            if any(keyword in query.lower() for keyword in ["what is", "tell me", "show", "how many", "maximum"]):
-                if "maximum" in query.lower() and "connections" in query.lower():
-                    success, results, error = self.execute_query(
-                        connection, 
-                        "SHOW VARIABLES LIKE 'max_connections'"
-                    )
-                    if success:
-                        return {
-                            "success": True,
-                            "response": f"The maximum number of connections allowed is {results[0]['Value']}",
-                            "diagnostics": {"max_connections": results}
-                        }
+            # Collect all relevant database metrics
+            diagnostics = {}
+            
+            # System variables
+            success, variables, _ = self.execute_query(connection, """
+                SHOW VARIABLES WHERE Variable_name IN (
+                    'max_connections', 'innodb_buffer_pool_size', 
+                    'query_cache_size', 'query_cache_type', 
+                    'max_heap_table_size', 'tmp_table_size'
+                )
+            """)
+            if success:
+                diagnostics['system_variables'] = variables
 
-            # Collect diagnostic information
-            diagnostics = self.collect_diagnostics(connection)
-            
-            # Get targeted diagnostics based on query
-            targeted_diagnostics = self.collect_targeted_diagnostics(connection, query)
-            diagnostics.update(targeted_diagnostics)
-            
-            # Format diagnostics for analysis
-            formatted_diagnostics = self.format_diagnostics(diagnostics)
-            
-            # Analyze diagnostics
-            doc_context = doc_search_result.get("response", "") if doc_search_result else ""
-            analysis = self.analyze_diagnostics(query, diagnostics, doc_context)
-            
+            # Performance metrics
+            success, performance, _ = self.execute_query(connection, """
+                SHOW GLOBAL STATUS WHERE Variable_name IN (
+                    'Threads_connected', 'Max_used_connections',
+                    'Aborted_connects', 'Bytes_received',
+                    'Bytes_sent', 'Questions', 'Slow_queries'
+                )
+            """)
+            if success:
+                diagnostics['performance_metrics'] = performance
+
+            # Table statistics
+            success, tables, _ = self.execute_query(connection, """
+                SELECT 
+                    TABLE_NAME,
+                    TABLE_ROWS,
+                    ROUND(DATA_LENGTH/1024/1024, 2) AS data_size_mb,
+                    ROUND(INDEX_LENGTH/1024/1024, 2) AS index_size_mb,
+                    ENGINE
+                FROM information_schema.TABLES 
+                WHERE TABLE_SCHEMA = 'multiAgent'
+            """)
+            if success:
+                diagnostics['table_stats'] = tables
+
+            # Process information
+            success, processes, _ = self.execute_query(connection, """
+                SELECT COUNT(*) as active_processes, 
+                       SUM(TIME) as total_process_time 
+                FROM INFORMATION_SCHEMA.PROCESSLIST 
+                WHERE COMMAND != 'Sleep'
+            """)
+            if success:
+                diagnostics['process_info'] = processes
+
+            # Format all collected data into a structured response
+            analysis_result = {
+                "system_config": {
+                    var['Variable_name']: var['Value'] 
+                    for var in diagnostics.get('system_variables', [])
+                },
+                "performance_stats": {
+                    stat['Variable_name']: stat['Value'] 
+                    for stat in diagnostics.get('performance_metrics', [])
+                },
+                "table_metrics": [
+                    {
+                        "name": table['TABLE_NAME'],
+                        "rows": table['TABLE_ROWS'],
+                        "size_mb": table['data_size_mb'],
+                        "index_mb": table['index_size_mb'],
+                        "engine": table['ENGINE']
+                    }
+                    for table in diagnostics.get('table_stats', [])
+                ],
+                "process_metrics": diagnostics.get('process_info', [{}])[0]
+            }
+
             connection.close()
-            
+
+            # Analyze the collected data
+            analysis = self.analyze_diagnostics(query, analysis_result, 
+                                             doc_search_result.get("response", "") if doc_search_result else "")
+
             return {
                 "success": True,
                 "response": analysis,
-                "diagnostics": diagnostics
+                "diagnostics": analysis_result  # Structured metrics for SolutionAgent
             }
-            
+
         except Exception as e:
             return {
                 "success": False,
@@ -298,144 +337,153 @@ class MySQLDBAnalysisAgent:
                 "diagnostics": {}
             }
 
+
     # def print_analysis_result(self, result):
     #     print("\n" + "="*50)
     #     print("MULTIAGENT DATABASE ANALYSIS")
     #     print("="*50)
         
     #     if result["success"]:
-    #         print("\nDatabase Summary:")
-    #         print("-"*50)
-    #         if "database_info" in result["diagnostics"]:
-    #             for info in result["diagnostics"]["database_info"]:
-    #                 print(f"Database Size: {info.get('Size', 'N/A')} bytes")
-    #                 print(f"Total Tables: {info.get('Tables', 'N/A')}")
-    #                 print(f"Total Rows: {info.get('Total Rows', 'N/A')}")
-            
-    #         print("\nTable Details:")
-    #         print("-"*50)
-    #         if "table_details" in result["diagnostics"]:
-    #             for table in result["diagnostics"]["table_details"]:
-    #                 print(f"\nTable: {table.get('TABLE_NAME')}")
-    #                 print(f"Engine: {table.get('ENGINE')}")
-    #                 print(f"Rows: {table.get('TABLE_ROWS')}")
-    #                 print(f"Size: {table.get('Size')} bytes")
-                    
-    #         print("\nAnalysis Response:")
-    #         print("-"*50)
-    #         print(result["response"])
+    #         connection = self.connect_to_database()
+    #         if connection:
+    #             # Get transaction analysis
+    #             success_trans, transactions, _ = self.execute_query(connection, """
+    #                 SELECT 
+    #                     t.transaction_id, 
+    #                     t.transaction_type, 
+    #                     t.amount, 
+    #                     t.transaction_date, 
+    #                     u.username
+    #                 FROM 
+    #                     transactions t
+    #                 JOIN 
+    #                     users u ON t.user_id = u.user_id
+    #                 WHERE 
+    #                     t.transaction_date BETWEEN 
+    #                         DATE_SUB(NOW(), INTERVAL 15 DAY) AND 
+    #                         DATE_SUB(NOW(), INTERVAL 10 DAY)
+    #                 ORDER BY 
+    #                     t.amount DESC
+    #                 LIMIT 5
+    #             """)
+
+    #             # Get connection statistics
+    #             success_conn, conn_errors, _ = self.execute_query(connection, 
+    #                 "SHOW GLOBAL STATUS LIKE 'Connection_errors%'")
+
+    #             # Get system variables
+    #             success_vars, variables, _ = self.execute_query(connection, """
+    #                 SHOW VARIABLES WHERE Variable_name IN (
+    #                     'max_connections',
+    #                     'innodb_buffer_pool_size',
+    #                     'query_cache_size',
+    #                     'query_cache_type'
+    #                 )
+    #             """)
+
+    #             # Get long running queries
+    #             success_long, long_queries, _ = self.execute_query(connection, """
+    #                 SELECT 
+    #                     ID, USER, HOST, DB, COMMAND, TIME, STATE, INFO 
+    #                 FROM 
+    #                     INFORMATION_SCHEMA.PROCESSLIST 
+    #                 WHERE 
+    #                     COMMAND != 'Sleep' 
+    #                     AND TIME > 5
+    #                 ORDER BY 
+    #                     TIME DESC
+    #             """)
+
+    #             # Get table statistics
+    #             success_stats, table_stats, _ = self.execute_query(connection, """
+    #                 SELECT 
+    #                     TABLE_SCHEMA, 
+    #                     TABLE_NAME, 
+    #                     TABLE_ROWS,
+    #                     ROUND(DATA_LENGTH/1024/1024, 2) AS data_size_mb,
+    #                     ROUND(INDEX_LENGTH/1024/1024, 2) AS index_size_mb
+    #                 FROM 
+    #                     information_schema.TABLES 
+    #                 WHERE 
+    #                     TABLE_SCHEMA = 'multiAgent'
+    #                 ORDER BY 
+    #                     data_size_mb DESC
+    #             """)
+
+    #             # Get InnoDB transactions and locks
+    #             success_trx, innodb_trx, _ = self.execute_query(connection, 
+    #                 "SELECT * FROM information_schema.INNODB_TRX")
+    #             success_locks, data_locks, _ = self.execute_query(connection, 
+    #                 "SELECT * FROM performance_schema.data_locks")
+
+    #             print("\nRecent Transactions (Last 15-10 days):")
+    #             print("-"*50)
+    #             if success_trans and transactions:
+    #                 for tx in transactions:
+    #                     print(f"ID: {tx.get('transaction_id')}, "
+    #                         f"Type: {tx.get('transaction_type')}, "
+    #                         f"Amount: {tx.get('amount')}, "
+    #                         f"Date: {tx.get('transaction_date')}, "
+    #                         f"User: {tx.get('username')}")
+
+    #             print("\nConnection Statistics:")
+    #             print("-"*50)
+    #             if success_conn and conn_errors:
+    #                 for err in conn_errors:
+    #                     print(f"{err.get('Variable_name')}: {err.get('Value')}")
+
+    #             print("\nSystem Variables:")
+    #             print("-"*50)
+    #             if success_vars and variables:
+    #                 for var in variables:
+    #                     print(f"{var.get('Variable_name')}: {var.get('Value')}")
+
+    #             print("\nLong Running Queries (>5 seconds):")
+    #             print("-"*50)
+    #             if success_long and long_queries:
+    #                 for query in long_queries:
+    #                     print(f"ID: {query.get('ID')}, "
+    #                         f"User: {query.get('USER')}, "
+    #                         f"Time: {query.get('TIME')}s, "
+    #                         f"State: {query.get('STATE')}")
+
+    #             print("\nTable Statistics:")
+    #             print("-"*50)
+    #             if success_stats and table_stats:
+    #                 for stat in table_stats:
+    #                     print(f"Table: {stat.get('TABLE_NAME')}, "
+    #                         f"Rows: {stat.get('TABLE_ROWS')}, "
+    #                         f"Data Size: {stat.get('data_size_mb')}MB, "
+    #                         f"Index Size: {stat.get('index_size_mb')}MB")
+
+    #             print("\nActive InnoDB Transactions:")
+    #             print("-"*50)
+    #             if success_trx and innodb_trx:
+    #                 for trx in innodb_trx:
+    #                     print(f"TRX ID: {trx.get('trx_id')}, "
+    #                         f"State: {trx.get('trx_state')}, "
+    #                         f"Started: {trx.get('trx_started')}")
+
+    #             print("\nData Locks:")
+    #             print("-"*50)
+    #             if success_locks and data_locks:
+    #                 for lock in data_locks:
+    #                     print(f"Lock ID: {lock.get('LOCK_ID')}, "
+    #                         f"Type: {lock.get('LOCK_TYPE')}, "
+    #                         f"Mode: {lock.get('LOCK_MODE')}")
+
+    #             print("\nAnalysis Response:")
+    #             print("-"*50)
+    #             print(result["response"])
+                
+    #             connection.close()
+    #         else:
+    #             print("Could not connect to database to fetch additional information")
     #     else:
     #         print("\nAnalysis Failed:")
     #         print(result["response"])
         
-    #     print("\n" + "="*50 + "\n")
-
-    def print_analysis_result(self, result):
-        print("\n" + "="*50)
-        print("MULTIAGENT DATABASE ANALYSIS")
-        print("="*50)
-        
-        if result["success"]:
-            # Add additional diagnostic queries for system variables and status
-            connection = self.connect_to_database()
-            if connection:
-                # Get important system variables
-                success, variables, _ = self.execute_query(connection, """
-                    SHOW VARIABLES WHERE Variable_name IN (
-                        'max_connections',
-                        'innodb_buffer_pool_size',
-                        'innodb_log_file_size',
-                        'key_buffer_size',
-                        'max_allowed_packet',
-                        'wait_timeout',
-                        'interactive_timeout',
-                        'thread_cache_size',
-                        'query_cache_size',
-                        'innodb_flush_method',
-                        'innodb_flush_log_at_trx_commit'
-                    )
-                """)
-                
-                # Get InnoDB status
-                success_innodb, innodb_status, _ = self.execute_query(connection, "SHOW ENGINE INNODB STATUS")
-                
-                # Get global status
-                success_status, global_status, _ = self.execute_query(connection, """
-                    SHOW GLOBAL STATUS WHERE Variable_name IN (
-                        'Threads_connected',
-                        'Threads_running',
-                        'Queries',
-                        'Slow_queries',
-                        'Uptime',
-                        'Bytes_received',
-                        'Bytes_sent'
-                    )
-                """)
-
-                print("\nDatabase Summary:")
-                print("-"*50)
-                if "database_info" in result["diagnostics"]:
-                    for info in result["diagnostics"]["database_info"]:
-                        print(f"Database Size: {info.get('Size', 'N/A')} bytes")
-                        print(f"Total Tables: {info.get('Tables', 'N/A')}")
-                        print(f"Total Rows: {info.get('Total Rows', 'N/A')}")
-                
-                print("\nSystem Variables:")
-                print("-"*50)
-                if success and variables:
-                    for var in variables:
-                        print(f"{var['Variable_name']}: {var['Value']}")
-                
-                print("\nGlobal Status:")
-                print("-"*50)
-                if success_status and global_status:
-                    for status in global_status:
-                        print(f"{status['Variable_name']}: {status['Value']}")
-                
-                print("\nTable Details:")
-                print("-"*50)
-                if "table_details" in result["diagnostics"]:
-                    for table in result["diagnostics"]["table_details"]:
-                        print(f"\nTable: {table.get('TABLE_NAME')}")
-                        print(f"Engine: {table.get('ENGINE')}")
-                        print(f"Rows: {table.get('TABLE_ROWS')}")
-                        print(f"Size: {table.get('Size')} bytes")
-                        print(f"Created: {table.get('CREATE_TIME')}")
-                        print(f"Updated: {table.get('UPDATE_TIME')}")
-                
-                print("\nIndex Information:")
-                print("-"*50)
-                if "table_indexes" in result["diagnostics"]:
-                    current_table = None
-                    for index in result["diagnostics"]["table_indexes"]:
-                        if current_table != index.get('TABLE_NAME'):
-                            current_table = index.get('TABLE_NAME')
-                            print(f"\nTable: {current_table}")
-                        print(f"Index: {index.get('INDEX_NAME')} "
-                            f"(Column: {index.get('COLUMN_NAME')}, "
-                            f"Non-Unique: {index.get('NON_UNIQUE')})")
-                
-                print("\nActive Processes:")
-                print("-"*50)
-                if "database_processes" in result["diagnostics"]:
-                    for process in result["diagnostics"]["database_processes"]:
-                        print(f"ID: {process.get('ID')}, "
-                            f"User: {process.get('USER')}, "
-                            f"State: {process.get('STATE')}, "
-                            f"Time: {process.get('TIME')}s")
-                
-                print("\nAnalysis Response:")
-                print("-"*50)
-                print(result["response"])
-                
-                connection.close()
-            else:
-                print("Could not connect to database to fetch additional information")
-        else:
-            print("\nAnalysis Failed:")
-            print(result["response"])
-        
-        print("\n" + "="*50 + "\n")
+    # print("\n" + "="*50 + "\n")
 
 # if __name__ == "__main__":
 #     # Run the test function if this file is executed directly
