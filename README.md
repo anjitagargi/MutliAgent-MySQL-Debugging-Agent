@@ -1,5 +1,6 @@
 # DebugSage
-### [Uploading DebugSage-multi-agent-mysql.pdf…]()
+### [DebugSage-multi-agent-mysql.pdf](https://github.com/user-attachments/files/34592874/DebugSage-multi-agent-mysql.pdf)
+
 
 **A multi-agent assistant that debugs MySQL problems.** Ask a question in plain English. Three specialised agents work in sequence: one reads the right version of the MySQL docs, one checks the real database state with safe read-only queries, and one turns both into specific fixes you can run.
 
