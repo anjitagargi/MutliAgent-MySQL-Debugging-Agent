@@ -1,10 +1,12 @@
 # DebugSage
+### [Uploading DebugSage-multi-agent-mysql.pdf…]()
 
 **A multi-agent assistant that debugs MySQL problems.** Ask a question in plain English. Three specialised agents work in sequence: one reads the right version of the MySQL docs, one checks the real database state with safe read-only queries, and one turns both into specific fixes you can run.
 
 ## Demo
 
 <!-- Drag debugsage-demo.mp4 into this spot while editing on GitHub. GitHub uploads it and inserts the video link for you. -->
+https://github.com/user-attachments/assets/46f82a3f-88d3-4f83-94fb-c3372a75b954
 
 ## Contents
 
@@ -47,27 +49,18 @@ The workflow is sequential on purpose: database analysis is guided by the docume
 ## How it works
 
 Before, a DBA or on-call engineer searched documentation, tickets and the database by hand. DebugSage turns that into one guided flow.
-
-![Manual troubleshooting compared with the DebugSage agent workflow](docs/before-after.png)
-
 1. You ask a question, for example *"Why am I getting replication lag and how can I solve it?"*
 2. The **DocSearch Agent** finds the relevant, version-specific documentation.
 3. The **DB Analysis Agent** runs read-only diagnostic queries to see what is really happening.
 4. The **Solution Agent** returns a final response: a solution overview, steps with SQL commands, verification queries and additional recommendations.
 
 ## Architecture
-
-![DebugSage system architecture](docs/architecture.png)
-
 - **Data agents (A1 to A4)** gather the context the model needs: slow queries and max-connection issues, SQL and error logs, documentation trends, and CPU and memory metrics.
 - **Vector database** stores that context for retrieval.
 - **RAG + LLM** reasons over the retrieved context.
 - **SQL agent** looks for checks, validates and executes queries against the database, then feeds the results back to the model before the answer is returned.
 
 ## Inside the DocSearch Agent
-
-![DocSearch Agent flow](docs/docsearch-flow.png)
-
 The DocSearch Agent has two paths so that a failure in one never leaves a question unanswered.
 
 - **Primary path (agent-based reasoning):** the agent picks a tool, such as the troubleshooting handler, and the matching handler builds a prompt from the retrieved documents and the query. The LLM answers with references.
@@ -77,9 +70,6 @@ The DocSearch Agent has two paths so that a failure in one never leaves a questi
 ## Example runs
 
 ### Query performance: "How can I improve MySQL query performance?"
-
-![Final response for the query performance question](docs/test-query-performance.png)
-
 The final response included, in order:
 
 1. Setting `innodb_buffer_pool_size` to 85% of the available RAM.
@@ -89,10 +79,6 @@ The final response included, in order:
 5. Verification commands to confirm each change, plus extra recommendations such as using `EXPLAIN` and proactive monitoring.
 
 ### Replication lag: "Why am I getting replication lag and how can I solve it?"
-
-![Final response for the replication lag question, run A](docs/test-replication-lag-a.png)
-
-![Final response for the replication lag question, run B](docs/test-replication-lag-b.png)
 
 Both runs list steps with the exact commands, how to verify them, and further recommendations such as monitoring replication lag, memory usage and disk I/O.
 
@@ -104,27 +90,6 @@ Both runs list steps with the exact commands, how to verify them, and further re
 - **Knowledge base:** MySQL documentation for versions 5.7, 8.0 and 8.1
 - **Database access:** read-only MySQL connection for diagnostics
 
-## Getting started
-
-<!--
-Fill this section in before publishing. Suggested outline:
-
-### Prerequisites
-- Language and version
-- A MySQL server you can connect to with a read-only user
-- An API key or model setup for the LLM
-
-### Install
-(commands to clone the repo and install dependencies)
-
-### Configure
-(environment variables, database connection settings, documentation index location)
-
-### Run
-(the command that starts DebugSage and an example question)
--->
-
-Setup instructions are coming soon.
 
 ## Safety notes
 
